@@ -1,4 +1,3 @@
-
 # 第一輪抓sb_country sb_rank + sb_url
 # 第二輪依據 sb_url, 進入連結抓取 channel_name, channel_type, type_rank, uploads, subs, video_views, channel_url
 # 再加回 sb_country, sb_rank
@@ -7,6 +6,7 @@
 import urllib.request
 import pandas as pd
 from bs4 import BeautifulSoup
+from openpyxl import load_workbook
 import sqlite3
 import time
 import requests
@@ -19,9 +19,11 @@ import random
 import pdb
 
 
+
+# condition
 countries = []
 while True:
-	country = input('Please enter the countries: ')
+	country = input('Please enter the countries (or type q to exit) :')
 
 	if country == 'q' :
 		break
@@ -29,6 +31,7 @@ while True:
 		countries.append(country)
 	
 rows = int(input('Please enter the number within the top ranks: '))
+
 
 
 # sb_youtube_info
@@ -67,24 +70,30 @@ for country_select in countries:
 			sb_link = [country_select, sb_rank, sb_url]
 			sb_youtube_info.append(sb_link)
 			
+	print(time.strftime('%X', time.localtime()), country_select, ': Done')
+
 # to DataFrame
 sb_youtube_info_df = pd.DataFrame(sb_youtube_info, columns=['country_select', 'sb_rank', 'sb_url'])
 			
 # to excel file
 sb_youtube_info_df.to_csv('sb_youtube_info.csv', index=False, sep=',')
 
-# 連結/建立DB
-with sqlite3.connect('youtubers.db') as conn:
-	sb_youtube_info_df.to_sql('sb_youtube_info', conn, index=False, if_exists='append')
+# # 連結/建立DB
+# with sqlite3.connect('youtubers.db') as conn:
+# 	sb_youtube_info_df.to_sql('sb_youtube_info', conn, index=False, if_exists='append')
 
 
 
 # youtube_info
 youtube_info = []
 
-# 開啟sqlite 連結
-with sqlite3.connect('youtubers.db') as conn:
-	data = pd.read_sql('SELECT * FROM ' + 'sb_youtube_info', conn)   # sql: SELECT * FROM table_name 
+# # 開啟sqlite 連結
+# with sqlite3.connect('youtubers.db') as conn:
+# 	data = pd.read_sql('SELECT * FROM ' + 'sb_youtube_info', conn)   # sql: SELECT * FROM table_name 
+
+
+# 讀取csv
+data =  pd.read_csv('sb_youtube_info.csv')
 	
 # 讀出data的type為DataFrame => DataFrame需轉為List
 sb_youtube_info = data.values.tolist()
@@ -118,6 +127,7 @@ for sb_youtube_info_line in sb_youtube_info:
 
 		youtube_link = [country, sb_rank, channel_name, channel_type, type_rank, uploads, subs, video_views, channel_url]
 		youtube_info.append(youtube_link)
+	print(time.strftime('%X', time.localtime()), sb_youtube_info_line, ': Done')
 		
 # to DataFrame
 youtube_info_df = pd.DataFrame(youtube_info, columns=['country', 'sb_rank', 'channel_name', 'channel_type', 'type_rank', 'uploads', 'subs', 'video_views', 'channel_url'])
@@ -125,22 +135,45 @@ youtube_info_df = pd.DataFrame(youtube_info, columns=['country', 'sb_rank', 'cha
 # to excel file
 youtube_info_df.to_csv('youtube_info.csv', index=False, sep=',')
 
-# 連結/建立DB
-with sqlite3.connect('youtubers.db') as conn:
-	youtube_info_df.to_sql('youtube_info', conn, index=False, if_exists='append') 
+# # 連結/建立DB
+# with sqlite3.connect('youtubers.db') as conn:
+# 	youtube_info_df.to_sql('youtube_info', conn, index=False, if_exists='append')
 
 
 
-# country_dict = {'us':'United States', 
-# 				'de':'Germany',
-# 				'fr':'France',
-# 				'jp':'Japan',
-# 				'es':'Spain',
-# 				'gb':'Great Britain',
-# 				'au':'Australia',
-# 				'tw':'Taiwan',
-# 				'kr':'Korea South',
-# 				'it':'Italy'}
+# output excel file
+with pd.ExcelWriter('final_excel.xlsx', engine='openpyxl') as writer:
+	output_data = pd.read_csv('youtube_info.csv')
+	for country in countries:
+		country_data = output_data['country'] == country   # 取出country(column)裡面的等於country(輸入)的項目
+		output_data[country_data].to_excel(writer, country, index=False)
+
+	drop_column = ['sb_rank','channel_type', 'type_rank', 'uploads', 'subs', 'video_views']
+	import_data = output_data.drop(drop_column, axis=1)
+	import_data['Channel Type'] = 1
+	import_data['Channel Sub Type'] = 2
+	import_data['YouTube User Name'] = ''
+	import_data['YouTube Playlist'] = ''
+	import_data['Channel No'] = ''
+
+	import_data.rename(columns = {'country':'Country', 'channel_name':'Channel Name', 'channel_url':'YouTube Channel ID'},inplace=True)
+	col_order = ['Channel No', 'Country', 'Channel Type', 'Channel Sub Type', 'Channel Name', 'YouTube User Name', 'YouTube Channel ID', 'YouTube Playlist']
+	import_data = import_data.reindex(columns = col_order)
+
+	import_data.index = list(range(len(import_data))) # [0, 1, 2,....]
+	for i in range(len(import_data)):
+		import_data.loc[i, 'Channel No'] = i+1
+		import_data.loc[i, 'YouTube Channel ID'] = import_data.loc[i, 'YouTube Channel ID'].split('/')[-1]
+
+	import_data.to_excel(writer, sheet_name='import_data', index=False)
 
 
+country_dict = {'us':'United States', 'de':'Germany', 'fr':'France', 'jp':'Japan', 'es':'Spain','gb':'Great Britain', 'au':'Australia', 'tw':'Taiwan', 'kr':'Korea South', 'it':'Italy'}
+
+
+
+
+
+# excel分sheet可移至上一層
+# 最後final可以用drop的方式整理, 再append到excel
 
