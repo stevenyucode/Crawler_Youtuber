@@ -7,9 +7,7 @@
 
 Note:
 (1) Beautiful soup: find -> 'str', find_all -> [], select -> []
-
 '''
-
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -25,16 +23,17 @@ import pdb
 
 
 def sb_youtube_info(countries, rows, country_dict):
+
 	sb_youtube_info_list = []
 
 	for country in countries:
 		url = 'https://socialblade.com/youtube/top/country/' + str(country)
 		soup = get_soup(url)
-		
 		table_soup = soup.find(style = re.compile('float: right; width'))
 		row_soup = table_soup.find_all(style = re.compile('color:#444'))   # find_all的result為list -> []
-
+		
 		for row_data in row_soup:
+
 			# row_soup這個list, 在當前迴圈row_data的index位置(index=0,1,2..) <= rows-1 (假如rows輸入2, 那就只取"前2次(名)" => 取index(0), index(1))
 			if row_soup.index(row_data) <= rows-1:
 				sb_rank_row = row_data.find(style = re.compile('color:#888'))
@@ -50,12 +49,12 @@ def sb_youtube_info(countries, rows, country_dict):
 
 			sb_link = [country, sb_rank, sb_url]
 			sb_youtube_info_list.append(sb_link)
-
 			# print(time.strftime('%X', time.localtime()), country, 'rank', sb_rank, '& url : Done')
 		print(time.strftime('%X', time.localtime()), country_dict[country], 'Rank', sb_rank, 'Cralwer Completed !!')
+	
 	# to DataFrame
 	sb_youtube_info_df = pd.DataFrame(sb_youtube_info_list, columns=['country', 'sb_rank', 'sb_url'])
-	
+
 	return sb_youtube_info_df
 
 
@@ -66,23 +65,24 @@ def get_soup(url):
 		time.sleep(2)   # 每個requests間隔2秒
 		lock.release()
 		response = requests.get(url, headers=headers)
-		soup = response_Check(response)
+		soup = response_Check(response, url)
 	except BaseException as error:
 		print('Expection Error:', error)
-		time.sleep(random.randint(5, 8))  # 異常, 拉長抓取時間
+		time.sleep(random.randint(5, 8))  # 異常, 拉長抓取間隔時間
 		soup = 0
-
+	
 	return soup
 
 
-def response_Check(response):
+def response_Check(response, url):
 	if response.status_code == requests.codes.ok:   # code.ok = response[200]
 		soup = BeautifulSoup(response.text, 'lxml')   # 使用lxml解析器, 回傳內容裡的文字, 也就是html內容傳入BeautifulSoup		
 	else:
 		print(response)
 		print('Fail url:', url)
-		time.sleep(random.randint(5, 8))  # 被阻擋, 拉長等待時間
+		time.sleep(random.randint(5, 8))  # 被阻擋, 拉長抓取間隔時間
 		soup = 0
+	
 	return soup
 
 
@@ -91,79 +91,75 @@ def get_youtube_info(sb_youtube_info_line, youtube_info_list):
 		country = sb_youtube_info_line[0]
 		sb_rank = sb_youtube_info_line[1]
 		url = sb_youtube_info_line[2]
-
 		soup = get_soup(url)
-
 		# select出來的result為[], 所以result需表示為取出index[0]的值, 下一步才可使用此值
 		channel_url = soup.select('#YouTubeUserTopSocial > div > .-margin')[0].attrs['href']  # attrs[]指定屬性獲取
-
 		# 先縮小範圍為top_soup, 再從中取出需要的值
 		top_soup = soup.select('#YouTubeUserTopInfoBlockTop')[0]
-				
-		# select的result, 需取出list值, 再使用getText() => 只能用在純文字檔(str)
+		# select的result, 需取出list值, 再使用getText()
 		channel_name = top_soup.select('div > h1')[0].getText()
 		channel_type = top_soup.select('#youtube-user-page-channeltype')[0].getText()
 		uploads = top_soup.select('#youtube-stats-header-uploads')[0].getText()
 		subs = top_soup.select('#youtube-stats-header-subs')[0].getText()
 		video_views = top_soup.select('#youtube-stats-header-views')[0].getText()
-
 		table_soup = soup.find(style = re.compile('float: right; width'))
 		type_rank = table_soup.select('div:nth-child(5) > div:nth-child(1) > p')[0].getText()
-
 		youtube_link = [country, sb_rank, channel_name, channel_type, type_rank, uploads, subs, video_views, channel_url]
 		youtube_info_list.append(youtube_link)
-
 		# to DataFrame
 		youtube_info_df = pd.DataFrame(youtube_info_list, columns=['country', 'sb_rank', 'channel_name', 'channel_type', 'type_rank', 'uploads', 'subs', 'video_views', 'channel_url'])
 		youtube_info_df = youtube_info_df.sort_values(by=['country', 'sb_rank'], ascending=True)
-
 		# 每條Thread完成時間不同, 故印出時間可能不會依照順序 
 		print(time.strftime('%X', time.localtime()), country, 'rank:', sb_rank, '-> %s is Done...' % threading.current_thread().name)
 		
-		# to CSV file
-		toCSV(youtube_info_df, 'youtube_info.csv')
+		# CSV/DB切換
+		# toCSV(youtube_info_df, 'youtube_info.csv')
+		toDB(youtube_info_df, db_name='youtube.db', table_name='youtube_info')
 
 
 def youtube_info():
 	tasks = []
 	youtube_info_list = []
-	
-	sb_youtube_info_df = readCSV('sb_youtube_info.csv')
+
+	# CSV/DB切換
+	# sb_youtube_info_df = readCSV('sb_youtube_info.csv')
+	sb_youtube_info_df = readDB(db_name='youtube.db', table_name='sb_youtube_info')
 
 	# 讀出data的type為DataFrame => DataFrame需轉為List
 	sb_youtube_info_list = sb_youtube_info_df.values.tolist()
 
 	for sb_youtube_info_line in sb_youtube_info_list:
-
 		task = threading.Thread(target=get_youtube_info, args=(sb_youtube_info_line, youtube_info_list))  # args需用固定格式(x,y)
-			
+		
 		# 線程開始run
 		task.start()
 		# 將所有線程加到list內
 		tasks.append(task)
-
+	
 	print(time.strftime('%X', time.localtime()), threading.active_count(), 'Thread Is Starting Crawlerd !!')
-
+	
 	counter = 0
 	for task in tasks:
 		counter += 1
-		task.join()   # 每個線程加入join, 確認跑完才會執行下一步
-			
+		# 每個線程加入join, 確認跑完才會執行下一步
+		task.join()
+
 	# 確認所有線程已完成
 	print(time.strftime('%X', time.localtime()), 'Total', counter, 'Thread Has Been Cralwer!!')
 
 
 def toCSV(df, filename):
-	# 到此之前方所有程式結束後, 才會繼續執行下一步
-	lock.acquire()
+	lock.acquire()   # 到此之前方所有程式結束後, 才會繼續執行下一步
+
 	df.to_csv(filename, index=False, sep=',')
+
 	lock.release()
 
 
 def readCSV(filename):
 	# 檢查檔案在不在
 	if os.path.isfile(filename):
-		# 讀取csv => 轉成DataFrame	
+		# 讀取csv => 轉成DataFrame
 		df = pd.read_csv(filename)
 	else:
 		print(filename, 'is NOT found!!')
@@ -171,21 +167,42 @@ def readCSV(filename):
 	return df
 
 
+def toDB(df, db_name, table_name):
+	# 連結/建立DB
+	lock.acquire()   # 到此之前方所有程式結束後, 才會繼續執行下一步
+
+	with sqlite3.connect(db_name) as conn:
+		df.to_sql(table_name, conn, index=False, if_exists='replace')
+	
+	lock.release()
+
+
+def readDB(db_name, table_name):
+	with sqlite3.connect(db_name) as conn:
+		df = pd.read_sql('select * from '+table_name, conn )
+
+	return df
+
+
 def export_excel(countries, country_dict):
 	with pd.ExcelWriter('Youtube_Cralwer_Report.xlsx') as writer:
-		
-		youtube_info_df = readCSV('youtube_info.csv')
+        
+        # CSV/DB切換
+		# youtube_info_df = readCSV('youtube_info.csv')
+		youtube_info_df = readDB(db_name='youtube.db', table_name='youtube_info')
 
 		for country in countries:
+
 			# 取出youtube檔案裡面column的country值, 等於當前迴圈使用的country值(=keyin)
 			country_data = youtube_info_df['country'] == country
+
 			# to EXCEL file
 			youtube_info_df[country_data].to_excel(writer, country, index=False)
 
 		# 丟棄不需要的 columns
 		drop_column = ['sb_rank','channel_type', 'type_rank', 'uploads', 'subs', 'video_views']
 		import_data = youtube_info_df.drop(drop_column, axis=1)
-		
+
 		# 加入新的columns
 		import_data['Channel Type'] = 1
 		import_data['Channel Sub Type'] = 2
@@ -194,9 +211,9 @@ def export_excel(countries, country_dict):
 		import_data['Channel No'] = ''
 
 	    #　重新排列 columns
-		import_data.rename(columns = {'country':'Country', 'channel_name':'Channel Name', 'channel_url':'YouTube Channel ID'},inplace=True)
+		import_data.rename(columns={'country':'Country', 'channel_name':'Channel Name', 'channel_url':'YouTube Channel ID'}, inplace=True)
 		col_order = ['Channel No', 'Country', 'Channel Type', 'Channel Sub Type', 'Channel Name', 'YouTube User Name', 'YouTube Channel ID', 'YouTube Playlist']
-		import_data = import_data.reindex(columns = col_order)
+		import_data = import_data.reindex(columns=col_order)
 
 		# 利用import_data的index與column位置來指定欄位 -> loc(row, column), 並變更該欄位的數值
 		for i in range(len(import_data)):
@@ -206,14 +223,13 @@ def export_excel(countries, country_dict):
 		
 		# Add new sheet to EXCEL file
 		import_data.to_excel(writer, sheet_name='import_data', index=False)
-		print('All Data has been import to Excel file')
+		print(time.strftime('%X', time.localtime()), 'All Data has been import to Excel file')
 
 
 def main():
-	'''
+	'''對話框輸入
 	while True:
 		country_input = input('Please enter the countries (type q to exit) :')
-
 		if country_input == 'q':
 			break
 		elif country_input in country_dict:
@@ -221,10 +237,8 @@ def main():
 			countries.sort()
 		elif country_input not in country_dict:
 			print('Country Not Found, please try again!!')
-
 	while True:
 		rows = input('Please enter the ranking to be searched: ')
-
 		if rows.isdigit():
 			rows = int(rows)
 			break
@@ -232,12 +246,16 @@ def main():
 			print('Please enter digital !!')
 			continue
 	'''
-	countries = ['us', 'fr', 'jp', 'es', 'gb', 'tw']# 'de', 'au', 'kr', 'it']
+	countries = ['us', 'jp', 'tw', 'kr', 'es', 'au'] #['us', 'de', 'fr', 'jp', 'es', 'gb', 'au', 'tw', 'kr', 'it']
 	country_dict = {'us':'United States', 'de':'Germany', 'fr':'France', 'jp':'Japan', 'es':'Spain', \
 	'gb':'Great Britain', 'au':'Australia', 'tw':'Taiwan', 'kr':'Korea South', 'it':'Italy'}
 	rows = 20
 	sb_youtube_info_df = sb_youtube_info(countries, rows, country_dict)
-	toCSV(sb_youtube_info_df, 'sb_youtube_info.csv')
+
+	# CSV/DB切換
+	# toCSV(sb_youtube_info_df, 'sb_youtube_info.csv')
+	toDB(sb_youtube_info_df, db_name='youtube.db', table_name='sb_youtube_info')
+
 	youtube_info()
 	export_excel(countries, country_dict)
 
